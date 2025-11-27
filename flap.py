@@ -161,6 +161,7 @@ BEGIN_IMAGE = pygame.image.load('assets/sprites/message.png').convert_alpha()
 # Prepare a Game Over surface to display after the bird dies
 GAME_OVER_TEXT = pygame.image.load('assets/sprites/gameover.png').convert_alpha()
 SCORE_PANEL = pygame.image.load('assets/sprites/score.png').convert_alpha()
+AGENT_WINDOW = pygame.image.load('assets/sprites/agent.png').convert_alpha()
 
 # --- Sprite groups and initial objects ---
 bird_group = pygame.sprite.Group()
@@ -237,7 +238,8 @@ while True:
 
         bird_group.draw(screen)
         ground_group.draw(screen)
-
+        if agent_enabled:
+            screen.blit(AGENT_WINDOW, (10, 510))
         pygame.display.update()
 
     #executes after the round has started
@@ -307,7 +309,8 @@ while True:
             bird_group.draw(screen)
             pipe_group.draw(screen)
             ground_group.draw(screen)
-
+            if agent_enabled:
+                screen.blit(AGENT_WINDOW, (10, 510))
             pygame.display.update()
 
             # death event
@@ -335,11 +338,13 @@ while True:
                 screen.blit(hs_surface, (310,308))
                 screen.blit(info_1_bg, (52, 222))
                 screen.blit(info_1, (50, 220))
-
                 # check if the conditions for agent to first intervene are met
                 if(not agent_enabled and loss_count >= 5 and ticks_played >=1800): # 60 ticks in a second. we check for 30 seconds of gameplay
                     agent_enabled = True
                     print("This is where the agent should first intervene")
+                    #TODO: pause the game and make the agent introduce itself 
+                if agent_enabled:
+                    screen.blit(AGENT_WINDOW, (10, 510))
                 
                 # TODO: agent speaks to the player in between rounds
                 if(agent_enabled): 
