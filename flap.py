@@ -1,5 +1,6 @@
 import pygame, random, time
 from pygame.locals import *
+from game_logger import init_session, start_game, finish_game, save_session
 
 # --- Imports ---
 # This file uses `pygame` for game loop, rendering and input,
@@ -13,7 +14,7 @@ GRAVITY = 0.5
 GAME_SPEED = 5
 
 GROUND_WIDHT = 2 * SCREEN_WIDHT
-GROUND_HEIGHT= 100
+GROUND_HEIGHT = 100
 
 PIPE_WIDHT = 80
 PIPE_HEIGHT = 500
@@ -36,9 +37,9 @@ class Bird(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
 
-        self.images =  [pygame.image.load('assets/sprites/bluebird-upflap.png').convert_alpha(),
-                        pygame.image.load('assets/sprites/bluebird-midflap.png').convert_alpha(),
-                        pygame.image.load('assets/sprites/bluebird-downflap.png').convert_alpha()]
+        self.images = [pygame.image.load('assets/sprites/bluebird-upflap.png').convert_alpha(),
+                       pygame.image.load('assets/sprites/bluebird-midflap.png').convert_alpha(),
+                       pygame.image.load('assets/sprites/bluebird-downflap.png').convert_alpha()]
 
         self.speed = SPEED
 
@@ -80,8 +81,6 @@ class Bird(pygame.sprite.Sprite):
             self.last_anim_time = now
 
 
-
-
 # --- Pipe sprite ---
 # Represents a single pipe (top or bottom). Can be created inverted (top pipe)
 # and scaled to a fixed width/height; moves left at constant game speed.
@@ -90,9 +89,8 @@ class Pipe(pygame.sprite.Sprite):
     def __init__(self, inverted, xpos, ysize):
         pygame.sprite.Sprite.__init__(self)
 
-        self. image = pygame.image.load('assets/sprites/pipe-green.png').convert_alpha()
+        self.image = pygame.image.load('assets/sprites/pipe-green.png').convert_alpha()
         self.image = pygame.transform.scale(self.image, (PIPE_WIDHT, PIPE_HEIGHT))
-
 
         self.rect = self.image.get_rect()
         self.rect[0] = xpos
@@ -103,19 +101,16 @@ class Pipe(pygame.sprite.Sprite):
         else:
             self.rect[1] = SCREEN_HEIGHT - ysize
 
-
         self.mask = pygame.mask.from_surface(self.image)
-
 
     def update(self):
         self.rect[0] -= GAME_SPEED
 
-        
- 
+
 # --- Ground sprite ---
 # Large repeating ground image that scrolls left to simulate forward motion.
 class Ground(pygame.sprite.Sprite):
-    
+
     def __init__(self, xpos):
         pygame.sprite.Sprite.__init__(self)
         self.image = pygame.image.load('assets/sprites/base.png').convert_alpha()
@@ -126,13 +121,16 @@ class Ground(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect[0] = xpos
         self.rect[1] = SCREEN_HEIGHT - GROUND_HEIGHT
+
     def update(self):
         self.rect[0] -= GAME_SPEED
+
 
 # --- Utility functions ---
 def is_off_screen(sprite):
     # Returns True when a sprite has moved fully off the left side of screen
     return sprite.rect[0] < -(sprite.rect[2])
+
 
 def get_random_pipes(xpos):
     # Create a pair of pipes (bottom and top) with a randomized gap position
@@ -171,43 +169,41 @@ bird_group.add(bird)
 ground_group = pygame.sprite.Group()
 
 # Create two ground pieces so we can scroll and recycle them
-for i in range (2):
+for i in range(2):
     ground = Ground(GROUND_WIDHT * i)
     ground_group.add(ground)
 
 pipe_group = pygame.sprite.Group()
 # Create an initial set of pipes positioned off to the right
-for i in range (2):
+for i in range(2):
     pipes = get_random_pipes(SCREEN_WIDHT * i + 800)
     pipe_group.add(pipes[0])
     pipe_group.add(pipes[1])
 
-
-
 clock = pygame.time.Clock()
 
-# Flag used for the start screen loop
-
-# --- Main game loop ---
-# Processes input, updates sprites, spawns and recycles pipes/ground, and
-# checks for collisions to end the game.
-
-# Variables tnat persist across frames
+# Variables that persist across frames
 begin = True
 alive = True
 passed = False
 score = 0
-high_score = 0 
+high_score = 0
 loss_count = 0
-ticks_played = 0 #used to track how much time the player has spend playing. the counter only increment while the bird is alive
+ticks_played = 0  # total ticks spent playing (alive and not on begin screen)
 agent_enabled = False
 agent_speaking = False
+
+# --- Logging state ---
+session_log, LOG_PATH = init_session("session_log.txt")
+current_game_key = None
+ticks_this_game = 0  # ticks within the current game
+
 
 while True:
 
     clock.tick(60)
 
-    #start of new round
+    # start of new round
     if begin:
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -217,12 +213,18 @@ while True:
                     bird.bump()
                     pygame.mixer.music.load(wing)
                     pygame.mixer.music.play()
+
+                    # --- start logging a new game ---
+                    ticks_this_game = 0
+                    current_game_key = start_game(
+                        session_log,
+                        high_score_before=high_score,
+                        loss_count_before=loss_count,
+                    )
+
                     begin = False
                     passed = False
                     score = 0
-
-                
-                    
 
         screen.blit(BACKGROUND, (0, 0))
         screen.blit(BEGIN_IMAGE, (120, 150))
@@ -230,7 +232,7 @@ while True:
         if is_off_screen(ground_group.sprites()[0]):
             ground_group.remove(ground_group.sprites()[0])
 
-            new_ground = Ground(GROUND_WIDHT - 20)
+            new_ground = Ground(GROUND_WIDHT * i)
             ground_group.add(new_ground)
 
         bird.begin()
@@ -242,7 +244,7 @@ while True:
             screen.blit(AGENT_WINDOW, (10, 510))
         pygame.display.update()
 
-    #executes after the round has started
+    # executes after the round has started
     else:
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -252,28 +254,32 @@ while True:
                     bird.bump()
                     pygame.mixer.music.load(wing)
                     pygame.mixer.music.play()
-                if not alive and not agent_speaking and event.key == K_r: # reset game
+                if not alive and not agent_speaking and event.key == K_r:  # reset game
                     alive = 1
+                    current_game_key = None
+                    ticks_this_game = 0
                     bird_group.empty()
                     bird = Bird()
                     bird_group.add(bird)
                     ground_group.empty()
-                    for i in range (2):
+                    for i in range(2):
                         ground = Ground(GROUND_WIDHT * i)
                         ground_group.add(ground)
                     pipe_group.empty()
                     # Create an initial set of pipes positioned off to the right
-                    for i in range (2):
+                    for i in range(2):
                         pipes = get_random_pipes(SCREEN_WIDHT * i + 800)
                         pipe_group.add(pipes[0])
                         pipe_group.add(pipes[1])
-                        begin = True
-
+                    begin = True
 
         screen.blit(BACKGROUND, (0, 0))
 
-        if (alive):
-            if not begin: ticks_played += 1 # count ticks spent playing
+        if alive:
+            if not begin:
+                ticks_played += 1  # total ticks spent playing
+                ticks_this_game += 1  # ticks within this game
+
             if is_off_screen(ground_group.sprites()[0]):
                 ground_group.remove(ground_group.sprites()[0])
                 new_ground = Ground(GROUND_WIDHT - 20)
@@ -285,10 +291,11 @@ while True:
             if (passed is False) and (current_pipe.rect[0] <= bird_pos):
                 passed = True
                 score += 1
+
                 print("Losses: " + str(loss_count))
                 print("  Best: " + str(high_score))
                 print(" Score: " + str(score))
-                print("  Time: " + str(round(float(ticks_played)/60, 1)) + " seconds") # nice innit?
+                print("  Time: " + str(round(float(ticks_played) / 60, 1)) + " seconds")
                 print()
 
             if is_off_screen(pipe_group.sprites()[0]):
@@ -300,7 +307,7 @@ while True:
                 pipe_group.add(pipes[0])
                 pipe_group.add(pipes[1])
 
-                passed = False # used for counting the pipes
+                passed = False  # used for counting the pipes
 
             bird_group.update()
             ground_group.update()
@@ -313,45 +320,73 @@ while True:
                 screen.blit(AGENT_WINDOW, (10, 510))
             pygame.display.update()
 
+            # --- collision / death detection ---
+            collision_ground = pygame.sprite.groupcollide(
+                bird_group, ground_group, False, False, pygame.sprite.collide_mask
+            )
+            collision_pipe = pygame.sprite.groupcollide(
+                bird_group, pipe_group, False, False, pygame.sprite.collide_mask
+            )
+
             # death event
-            if (pygame.sprite.groupcollide(bird_group, ground_group, False, False, pygame.sprite.collide_mask) or
-                    pygame.sprite.groupcollide(bird_group, pipe_group, False, False, pygame.sprite.collide_mask)):
+            if collision_ground or collision_pipe:
                 pygame.mixer.music.load(hit)
                 pygame.mixer.music.play()
                 alive = False
+
+                death_cause = "ground" if collision_ground else "pipe"
+
+                # update stats
                 high_score = max(high_score, score)
                 loss_count += 1
-                #interface mumbo-jumbo
-                score_surface = score_font.render(str(score), True,  (250, 121, 88))
-                score_bg_surface = score_bg_font.render(str(score), True, (240, 234, 161))
-                hs_surface = score_font.render(str(high_score), True,  (250, 121, 88))
-                hs_bg_surface = score_bg_font.render(str(high_score), True, (240, 234, 161))
-            # if not alive:
-            if not alive:
-                # overlay the Game Over text and draw the final frame then 
-                # player sees the result and can press 'R' to restart.
-                screen.blit(GAME_OVER_TEXT, (100, 100))
-                screen.blit(SCORE_PANEL, (35,200))
-                screen.blit(score_bg_surface, (310,245))
-                screen.blit(score_surface, (310,245))
-                screen.blit(hs_bg_surface, (310,308))
-                screen.blit(hs_surface, (310,308))
-                screen.blit(info_1_bg, (52, 222))
-                screen.blit(info_1, (50, 220))
-                # check if the conditions for agent to first intervene are met
-                if(not agent_enabled and loss_count >= 5 and ticks_played >=1800): # 60 ticks in a second. we check for 30 seconds of gameplay
-                    agent_enabled = True
-                    print("This is where the agent should first intervene")
-                    #TODO: pause the game and make the agent introduce itself 
-                if agent_enabled:
-                    screen.blit(AGENT_WINDOW, (10, 510))
-                
-                # TODO: agent speaks to the player in between rounds
-                if(agent_enabled): 
-                    agent_speaking = True
-                    # generate agent output and wait for it to finish speaking
 
-                    agent_speaking = False
-                    # you can now start a new round
-                    
-                pygame.display.update()
+                # finish and save this game's summary
+                if current_game_key is not None:
+                    finish_game(
+                        session_log,
+                        current_game_key,
+                        duration_ticks=ticks_this_game,
+                        final_score=score,
+                        high_score_after=high_score,
+                        loss_count_after=loss_count,
+                        death_cause=death_cause,
+                    )
+                    save_session(LOG_PATH, session_log)
+
+                # interface mumbo-jumbo
+                score_surface = score_font.render(str(score), True, (250, 121, 88))
+                score_bg_surface = score_bg_font.render(str(score), True, (240, 234, 161))
+                hs_surface = score_font.render(str(high_score), True, (250, 121, 88))
+                hs_bg_surface = score_bg_font.render(str(high_score), True, (240, 234, 161))
+
+        # if not alive:
+        if not alive:
+            # overlay the Game Over text and draw the final frame then
+            # player sees the result and can press 'R' to restart.
+            screen.blit(GAME_OVER_TEXT, (100, 100))
+            screen.blit(SCORE_PANEL, (35, 200))
+            screen.blit(score_bg_surface, (310, 245))
+            screen.blit(score_surface, (310, 245))
+            screen.blit(hs_bg_surface, (310, 308))
+            screen.blit(hs_surface, (310, 308))
+            screen.blit(info_1_bg, (52, 222))
+            screen.blit(info_1, (50, 220))
+            # check if the conditions for agent to first intervene are met
+            if (
+                not agent_enabled and loss_count >= 5 and ticks_played >= 1800
+            ):  # 60 ticks in a second. we check for 30 seconds of gameplay
+                agent_enabled = True
+                print("This is where the agent should first intervene")
+                # TODO: pause the game and make the agent introduce itself
+            if agent_enabled:
+                screen.blit(AGENT_WINDOW, (10, 510))
+
+            # TODO: agent speaks to the player in between rounds
+            if agent_enabled:
+                agent_speaking = True
+                # generate agent output and wait for it to finish speaking
+
+                agent_speaking = False
+                # you can now start a new round
+
+            pygame.display.update()
