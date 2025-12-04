@@ -3,6 +3,16 @@ from pygame.locals import *
 
 from game_logger import init_session, start_game, finish_game, save_session
 
+from agent_audio_manager import (
+    init_agent_sounds,
+    play_intro,
+    play_outro,
+    play_pipe_loss,
+    play_ground_loss,
+    play_high_score,
+    play_game_win,
+)
+
 
 # --- Imports ---
 # This file uses `pygame` for game loop, rendering and input,
@@ -29,6 +39,7 @@ hit = 'assets/audio/hit.wav'
 
 # Initialize pygame mixer for sound playback.
 pygame.mixer.init()
+init_agent_sounds()
 
 
 # --- Bird sprite ---
@@ -224,7 +235,7 @@ while True:
                     # --- logging: start a new game ---
                     current_game_key = start_game(session_log, high_score, loss_count)
                     game_ticks_start = ticks_played
-                    
+
                     begin = False
                     passed = False
                     score = 0
@@ -326,10 +337,18 @@ while True:
             )
 
             if hit_ground or hit_pipe:
+                if hit_pipe and agent_enabled:
+                    play_pipe_loss()
+                if hit_ground and agent_enabled:
+                    play_ground_loss()
                 pygame.mixer.music.load(hit)
                 pygame.mixer.music.play()
                 alive = False
                 high_score = max(high_score, score)
+
+                # display message if new high score reached
+                if high_score == score and agent_enabled:
+                    play_high_score()
                 loss_count += 1
 
                 # --- logging: finish current game ---
@@ -366,9 +385,10 @@ while True:
                 screen.blit(info_1, (50, 220))
                 # check if the conditions for agent to first intervene are met
                 if (
-                        not agent_enabled and loss_count >= 5 and ticks_played >= 1800):  # 60 ticks in a second. we check for 30 seconds of gameplay
+                        not agent_enabled and loss_count >= 5 and ticks_played >= 600):  # 60 ticks in a second. we check for 10 seconds of gameplay
                     agent_enabled = True
                     print("This is where the agent should first intervene")
+                    play_intro()
                     # TODO: pause the game and make the agent introduce itself 
                 if agent_enabled:
                     screen.blit(AGENT_WINDOW, (10, 510))
