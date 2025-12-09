@@ -1,6 +1,19 @@
 import pygame, random, time
 from pygame.locals import *
+
 from game_logger import init_session, start_game, finish_game, save_session
+
+from agent_audio_manager import update_agent_audio
+from agent_audio_manager import (
+    init_agent_sounds,
+    play_intro,
+    play_outro,
+    play_pipe_loss,
+    play_ground_loss,
+    play_high_score,
+    play_game_win,
+)
+
 
 # --- Imports ---
 # This file uses `pygame` for game loop, rendering and input,
@@ -27,6 +40,7 @@ hit = 'assets/audio/hit.wav'
 
 # Initialize pygame mixer for sound playback.
 pygame.mixer.init()
+init_agent_sounds()
 
 
 # --- Bird sprite ---
@@ -182,25 +196,30 @@ for i in range(2):
 
 clock = pygame.time.Clock()
 
-# Variables that persist across frames
+# Flag used for the start screen loop
+
+# --- Main game loop ---
+# Processes input, updates sprites, spawns and recycles pipes/ground, and
+# checks for collisions to end the game.
+
+# Variables tnat persist across frames
 begin = True
 alive = True
 passed = False
 score = 0
 high_score = 0
 loss_count = 0
-ticks_played = 0  # total ticks spent playing (alive and not on begin screen)
+ticks_played = 0  # used to track how much time the player has spend playing. the counter only increment while the bird is alive
 agent_enabled = False
 agent_speaking = False
 
-# --- Logging state ---
+# --- Logging setup ---
 session_log, LOG_PATH = init_session("session_log.txt")
 current_game_key = None
-ticks_this_game = 0  # ticks within the current game
-
+game_ticks_start = 0
 
 while True:
-
+    update_agent_audio()
     clock.tick(60)
 
     # start of new round
@@ -214,13 +233,9 @@ while True:
                     pygame.mixer.music.load(wing)
                     pygame.mixer.music.play()
 
-                    # --- start logging a new game ---
-                    ticks_this_game = 0
-                    current_game_key = start_game(
-                        session_log,
-                        high_score_before=high_score,
-                        loss_count_before=loss_count,
-                    )
+                    # --- logging: start a new game ---
+                    current_game_key = start_game(session_log, high_score, loss_count)
+                    game_ticks_start = ticks_played
 
                     begin = False
                     passed = False
@@ -232,7 +247,7 @@ while True:
         if is_off_screen(ground_group.sprites()[0]):
             ground_group.remove(ground_group.sprites()[0])
 
-            new_ground = Ground(GROUND_WIDHT * i)
+            new_ground = Ground(GROUND_WIDHT - 20)
             ground_group.add(new_ground)
 
         bird.begin()
@@ -256,8 +271,6 @@ while True:
                     pygame.mixer.music.play()
                 if not alive and not agent_speaking and event.key == K_r:  # reset game
                     alive = 1
-                    current_game_key = None
-                    ticks_this_game = 0
                     bird_group.empty()
                     bird = Bird()
                     bird_group.add(bird)
@@ -271,15 +284,12 @@ while True:
                         pipes = get_random_pipes(SCREEN_WIDHT * i + 800)
                         pipe_group.add(pipes[0])
                         pipe_group.add(pipes[1])
-                    begin = True
+                        begin = True
 
         screen.blit(BACKGROUND, (0, 0))
 
-        if alive:
-            if not begin:
-                ticks_played += 1  # total ticks spent playing
-                ticks_this_game += 1  # ticks within this game
-
+        if (alive):
+            if not begin: ticks_played += 1  # count ticks spent playing
             if is_off_screen(ground_group.sprites()[0]):
                 ground_group.remove(ground_group.sprites()[0])
                 new_ground = Ground(GROUND_WIDHT - 20)
@@ -291,11 +301,10 @@ while True:
             if (passed is False) and (current_pipe.rect[0] <= bird_pos):
                 passed = True
                 score += 1
-
                 print("Losses: " + str(loss_count))
                 print("  Best: " + str(high_score))
                 print(" Score: " + str(score))
-                print("  Time: " + str(round(float(ticks_played) / 60, 1)) + " seconds")
+                print("  Time: " + str(round(float(ticks_played) / 60, 1)) + " seconds")  # nice innit?
                 print()
 
             if is_off_screen(pipe_group.sprites()[0]):
@@ -320,36 +329,41 @@ while True:
                 screen.blit(AGENT_WINDOW, (10, 510))
             pygame.display.update()
 
-            # --- collision / death detection ---
-            collision_ground = pygame.sprite.groupcollide(
+            # death event
+            hit_ground = pygame.sprite.groupcollide(
                 bird_group, ground_group, False, False, pygame.sprite.collide_mask
             )
-            collision_pipe = pygame.sprite.groupcollide(
+            hit_pipe = pygame.sprite.groupcollide(
                 bird_group, pipe_group, False, False, pygame.sprite.collide_mask
             )
 
-            # death event
-            if collision_ground or collision_pipe:
+            if hit_ground or hit_pipe:
+                if hit_pipe and agent_enabled:
+                    play_pipe_loss()
+                if hit_ground and agent_enabled:
+                    play_ground_loss()
                 pygame.mixer.music.load(hit)
                 pygame.mixer.music.play()
                 alive = False
-
-                death_cause = "ground" if collision_ground else "pipe"
-
-                # update stats
                 high_score = max(high_score, score)
+
+                # display message if new high score reached
+                if high_score == score and agent_enabled:
+                    play_high_score()
                 loss_count += 1
 
-                # finish and save this game's summary
+                # --- logging: finish current game ---
                 if current_game_key is not None:
+                    duration_ticks = ticks_played - game_ticks_start
+                    death_cause = "ground" if hit_ground else "pipe"
                     finish_game(
                         session_log,
                         current_game_key,
-                        duration_ticks=ticks_this_game,
-                        final_score=score,
-                        high_score_after=high_score,
-                        loss_count_after=loss_count,
-                        death_cause=death_cause,
+                        duration_ticks,
+                        score,
+                        high_score,
+                        loss_count,
+                        death_cause,
                     )
                     save_session(LOG_PATH, session_log)
 
@@ -358,35 +372,34 @@ while True:
                 score_bg_surface = score_bg_font.render(str(score), True, (240, 234, 161))
                 hs_surface = score_font.render(str(high_score), True, (250, 121, 88))
                 hs_bg_surface = score_bg_font.render(str(high_score), True, (240, 234, 161))
+            # if not alive:
+            if not alive:
+                # overlay the Game Over text and draw the final frame then 
+                # player sees the result and can press 'R' to restart.
+                screen.blit(GAME_OVER_TEXT, (100, 100))
+                screen.blit(SCORE_PANEL, (35, 200))
+                screen.blit(score_bg_surface, (310, 245))
+                screen.blit(score_surface, (310, 245))
+                screen.blit(hs_bg_surface, (310, 308))
+                screen.blit(hs_surface, (310, 308))
+                screen.blit(info_1_bg, (52, 222))
+                screen.blit(info_1, (50, 220))
+                # check if the conditions for agent to first intervene are met
+                if (
+                        not agent_enabled and loss_count >= 5 and ticks_played >= 600):  # 60 ticks in a second. we check for 10 seconds of gameplay
+                    agent_enabled = True
+                    print("This is where the agent should first intervene")
+                    play_intro()
+                    # TODO: pause the game and make the agent introduce itself 
+                if agent_enabled:
+                    screen.blit(AGENT_WINDOW, (10, 510))
 
-        # if not alive:
-        if not alive:
-            # overlay the Game Over text and draw the final frame then
-            # player sees the result and can press 'R' to restart.
-            screen.blit(GAME_OVER_TEXT, (100, 100))
-            screen.blit(SCORE_PANEL, (35, 200))
-            screen.blit(score_bg_surface, (310, 245))
-            screen.blit(score_surface, (310, 245))
-            screen.blit(hs_bg_surface, (310, 308))
-            screen.blit(hs_surface, (310, 308))
-            screen.blit(info_1_bg, (52, 222))
-            screen.blit(info_1, (50, 220))
-            # check if the conditions for agent to first intervene are met
-            if (
-                not agent_enabled and loss_count >= 5 and ticks_played >= 1800
-            ):  # 60 ticks in a second. we check for 30 seconds of gameplay
-                agent_enabled = True
-                print("This is where the agent should first intervene")
-                # TODO: pause the game and make the agent introduce itself
-            if agent_enabled:
-                screen.blit(AGENT_WINDOW, (10, 510))
+                # TODO: agent speaks to the player in between rounds
+                if (agent_enabled):
+                    agent_speaking = True
+                    # generate agent output and wait for it to finish speaking
 
-            # TODO: agent speaks to the player in between rounds
-            if agent_enabled:
-                agent_speaking = True
-                # generate agent output and wait for it to finish speaking
+                    agent_speaking = False
+                    # you can now start a new round
 
-                agent_speaking = False
-                # you can now start a new round
-
-            pygame.display.update()
+                pygame.display.update()
