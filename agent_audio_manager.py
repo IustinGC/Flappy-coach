@@ -18,11 +18,7 @@ _score_sounds = []
 _win_sounds = []
 
 _initialized = False
-
-# --- NEW: Audio Queue & Channel ---
 _agent_channel = None
-_audio_queue = []  # A list to hold sounds waiting to be spoken
-
 
 def _load_sound(filename: str):
     path = os.path.join(SOUND_DIR, filename)
@@ -60,6 +56,7 @@ def init_agent_sounds():
         pygame.mixer.init()
 
     # Reserve Channel 0 explicitly for the agent
+    # This prevents other game sounds (SFX) from accidentally using this channel
     pygame.mixer.set_reserved(1)
     _agent_channel = pygame.mixer.Channel(0)
 
@@ -77,82 +74,58 @@ def init_agent_sounds():
 
 def update_agent_audio():
     """
-    CRITICAL: Place this in your main game loop!
-    Checks if the agent has finished speaking. If so, plays the next sound in queue.
+    No-op: Kept for compatibility with main.py calls. 
+    We no longer need to check queues or timers here.
     """
-    global _agent_channel, _audio_queue
+    pass
 
-    if _agent_channel is None:
+
+def _attempt_play_sound(sound, label: str):
+    """
+    The Core Logic:
+    1. Check if the agent is ALREADY speaking.
+    2. If YES: Drop the new sound (ignore it completely).
+    3. If NO: Play the new sound immediately.
+    """
+    global _agent_channel
+
+    if sound is None or _agent_channel is None:
         return
 
-    # If the agent is silent AND we have sounds waiting...
-    if not _agent_channel.get_busy() and len(_audio_queue) > 0:
-        next_sound = _audio_queue.pop(0)  # Get the first sound
-        print(f"[AgentSounds] Playing queued sound.")
-        _agent_channel.play(next_sound)
-
-
-def _queue_sound(sound, label: str, clear_queue_first: bool = False):
-    """
-    Handles the logic:
-    1. If clear_queue_first=True, we wipe any pending sounds (e.g., High Score)
-       so that this new important sound (Death) is the very next thing heard.
-    2. We NEVER interrupt the current speaker. We always add to queue.
-    """
-    global _audio_queue, _agent_channel
-
-    if sound is None:
+    # Check if the channel is currently playing audio
+    if _agent_channel.get_busy():
+        # Agent is talking. Do not interrupt. Do not queue.
+        # print(f"[AgentSounds] Ignored '{label}' - Agent is busy.")
         return
 
-    # 1. Handle "Death overrides High Score" requirement
-    if clear_queue_first:
-        if len(_audio_queue) > 0:
-            print(f"[AgentSounds] Priority Event ({label}): Cleared {_audio_queue} from queue.")
-            _audio_queue.clear()
-
-    # 2. Add to queue (or play immediately if queue is empty and channel is free)
-    # We push to queue first to keep logic simple, let update() handle playback.
-    _audio_queue.append(sound)
-
-    # Try to play immediately if idle (triggers in this frame)
-    update_agent_audio()
+    # Channel is free; play the sound.
+    print(f"[AgentSounds] Playing: {label}")
+    _agent_channel.play(sound)
 
 
-def _queue_random(sounds, label: str, clear_queue_first: bool = False):
+def _play_random(sounds, label: str):
     if not sounds:
         return
     snd = random.choice(sounds)
-    _queue_sound(snd, label, clear_queue_first)
+    _attempt_play_sound(snd, label)
 
 
 # ---------- Public helpers ----------
 
 def play_intro():
-    # Standard queue
-    _queue_sound(_intro_sound, "intro")
-
+    _attempt_play_sound(_intro_sound, "intro")
 
 def play_outro():
-    _queue_sound(_outro_sound, "outro")
-
+    _attempt_play_sound(_outro_sound, "outro")
 
 def play_pipe_loss():
-    # Clear Queue = True. 
-    # If "High Score" was just queued (from same frame), it gets deleted.
-    # The current phrase finishes (channel is not stopped), then this plays.
-    _queue_random(_pipe_loss_sounds, "pipe_loss", clear_queue_first=True)
-
+    _play_random(_pipe_loss_sounds, "pipe_loss")
 
 def play_ground_loss():
-    # Clear Queue = True.
-    _queue_random(_ground_loss_sounds, "ground_loss", clear_queue_first=True)
-
+    _play_random(_ground_loss_sounds, "ground_loss")
 
 def play_high_score():
-    # Standard queue. 
-    # If death happens immediately after, this entry will be wiped by the death function.
-    _queue_random(_score_sounds, "high_score")
-
+    _play_random(_score_sounds, "high_score")
 
 def play_game_win():
-    _queue_random(_win_sounds, "game_win")
+    _play_random(_win_sounds, "game_win")
