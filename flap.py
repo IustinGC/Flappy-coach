@@ -293,13 +293,13 @@ class FlappyGame:
                                                   pygame.sprite.collide_mask)
 
             if hit_ground or hit_pipe:
+                self.high_score = max(self.high_score, self.score)
+                if self.high_score == self.score and self.agent_enabled: play_high_score()
                 if hit_pipe and self.agent_enabled: play_pipe_loss()
                 if hit_ground and self.agent_enabled: play_ground_loss()
                 pygame.mixer.music.load(hit)
                 pygame.mixer.music.play()
                 self.alive = False
-                self.high_score = max(self.high_score, self.score)
-                if self.high_score == self.score and self.agent_enabled: play_high_score()
                 self.loss_count += 1
 
                 if self.current_game_key is not None:
@@ -347,7 +347,6 @@ class FlappyGame:
         return True
 
 
-# --- Allow running directly ---
 if __name__ == "__main__":
     game = FlappyGame()
     running = True

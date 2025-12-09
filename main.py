@@ -15,10 +15,8 @@ def main():
         # You can use these variables for your Support Agent later.
         state = game.get_state()
 
-        # Example: Print only when dead to avoid spamming console
-        if not state['is_alive'] and state['game_active']:
-            # This is where your agent might decide to speak
-            pass
+        # Warning: this prints a lot of lines
+        print(f"Current game state: {state}")
 
         # 3. Step the Game
         # passing nothing means "Read the Human Keyboard Input"
