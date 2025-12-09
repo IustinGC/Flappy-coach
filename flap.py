@@ -3,6 +3,7 @@ from pygame.locals import *
 
 from game_logger import init_session, start_game, finish_game, save_session
 
+from agent_audio_manager import update_agent_audio
 from agent_audio_manager import (
     init_agent_sounds,
     play_intro,
@@ -218,7 +219,7 @@ current_game_key = None
 game_ticks_start = 0
 
 while True:
-
+    update_agent_audio()
     clock.tick(60)
 
     # start of new round
