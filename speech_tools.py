@@ -11,7 +11,7 @@ import config
 
 class Environment:
     def __init__(self):
-        self.client = ElevenLabs(api_key=config.API_KEY)
+        self.client = ElevenLabs(api_key=config.EL_API_KEY)
         # Adam, for a standard
         self.agent_voice_id = config.VOICE_ID
 

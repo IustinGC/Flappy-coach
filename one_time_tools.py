@@ -4,7 +4,7 @@ from elevenlabs import save
 from dotenv import load_dotenv
 import config
 
-api_key = config.API_KEY
+api_key = config.EL_API_KEY
 voice_id = config.VOICE_ID
 client = ElevenLabs(api_key=api_key)
 
