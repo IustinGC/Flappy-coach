@@ -6,6 +6,7 @@ import config
 
 api_key = config.EL_API_KEY
 voice_id = config.VOICE_ID
+model_id_speak = config.MODEL_ID_SPEAK
 client = ElevenLabs(api_key=api_key)
 
 # Script definition. Dictionary format for simplicity: "filename": "the actual text"
@@ -92,7 +93,7 @@ for filename, text in script.items():
     audio = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,
-        model_id="eleven_multilingual_v2"
+        model_id=model_id_speak
     )
 
     save_path = f"assets/audio/{filename}.mp3"

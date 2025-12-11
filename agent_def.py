@@ -4,9 +4,10 @@ from google.genai import types
 import config
 
 # 1. model config (mainly just for access to temperature and other model properties)
-model_config = types.Model(
-    model_name=config.GEMINI_MODEL, 
-    temperature=0.7, # between 0 and 2, 0.7 lets the model offer variating responses
+generation_config = types.GenerateContentConfig(
+    temperature=0.7  # temperature setting, a 0.7 can be somewhat creative
+    # top_p=0.9,
+    # max_output_tokens=50 # You can add this if you want strictly short responses
 )
 
 
@@ -44,8 +45,11 @@ EXAMPLES:
 
 # 3. Agent (the Agent class functions like LlmAgent, just a little more versatile)
 flappy_agent = Agent(
-    name="flappy_support_agent",
-    model=Gemini(model_config),
+    name="flappy_companion",
+    model=Gemini(
+        model=config.GEMINI_MODEL,
+        generation_config=generation_config
+    ),
     instruction=SYSTEM_INSTRUCTION,
     # No tools needed if we pass game state as text context!
     tools=[] 
