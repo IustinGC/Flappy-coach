@@ -106,6 +106,16 @@ _agent_channel = None
 _pending_sound = None  # The sound waiting to be played
 _scheduled_play_time = 0.0  # The exact timestamp when it should start
 
+# allows main.py to tell us if the LLM is busy (thinking OR generating)
+_llm_is_busy = False 
+
+def set_llm_busy_state(is_busy: bool):
+    """
+    Called by Main Loop.
+    If True, prevents any new reflex sounds from being scheduled.
+    """
+    global _llm_is_busy
+    _llm_is_busy = is_busy
 
 def _load_sound(abs_path: str):
     """Loads a single sound file from an absolute path."""
@@ -190,30 +200,25 @@ def update_agent_audio():
 
 def _attempt_play_sound(sound, label: str):
     """
-    1. If Reflex Agent is speaking -> Ignore.
-    2. If LLM Agent is speaking -> Ignore. (NEW)
-    3. If Agent is 'thinking' (waiting to speak) -> Ignore.
-    4. Otherwise -> Schedule the sound.
+    1. If Agent is speaking -> Ignore.
+    2. If Agent is 'thinking' (waiting to speak) -> Ignore.
+    3. Otherwise -> Schedule the sound.
     """
-    global _agent_channel, _pending_sound, _scheduled_play_time
+    global _agent_channel, _pending_sound, _scheduled_play_time, _llm_is_busy
 
     if sound is None or _agent_channel is None:
         return
 
-    # Check 1: Is the Reflex Channel (0) busy?
+    # Check 1: Is the reflex channel already busy?
     if _agent_channel.get_busy():
         return
 
-    # --- FIX START: Check LLM Channel (1) ---
-    # We need to ensure the LLM isn't currently talking.
-    # Note: We assume Channel 1 is initialized since pygame.mixer.init() is global.
-    try:
-        if pygame.mixer.Channel(1).get_busy():
-            print(f"[AgentSounds] LLM is speaking. Suppressing reflex '{label}'.")
-            return
-    except:
-        pass # Channel 1 might not be initialized yet, ignore
-    # --- FIX END ---
+    # --- Check External LLM State ---
+    # If the LLM is Thinking, Generating, or Speaking, we suppress the reflex.
+    if _llm_is_busy:
+        # Optional: Print debug so you know why it was silent
+        # print(f"[AgentSounds] Suppressing '{label}' because LLM is busy.")
+        return
 
     # Check 2: Is the agent currently "thinking" about a previous reflex?
     if _pending_sound is not None:

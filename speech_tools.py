@@ -82,7 +82,7 @@ class Environment:
         
         # Set Lock IMMEDIATELY so we don't try to listen while downloading
         self.is_generating_tts = True
-        print(f"🤖 Agent queuing speech: {text}")
+        print(f"(SPEAKING) Agent queuing speech: {text}")
         
         threading.Thread(target=self._thread_fetch_tts, args=(text,), daemon=True).start()
 
@@ -94,14 +94,14 @@ class Environment:
         # THE LOCK: If agent is speaking/generating, we REJECT the listen request.
         if self.is_speaking:
             # We fail silently (or debug print) so main loop can try again later
-            # print("🛑 Listen rejected: Agent is speaking.") 
+            # print("Listen rejected: Agent is speaking.") 
             return False
 
         if self.is_listening:
             return False
 
         self.is_listening = True
-        print(f"👂 Agent listening ({duration}s)...")
+        print(f"(LISTENING) Agent listening ({duration}s)...")
         
         threading.Thread(target=self._thread_record_stt, args=(duration,), daemon=True).start()
         return True
@@ -119,7 +119,7 @@ class Environment:
             audio_data = b"".join(chunk for chunk in audio_generator)
             self.tts_payload_queue.put(audio_data)
         except Exception as e:
-            print(f"❌ TTS Error: {e}")
+            print(f"XXXX TTS Error: {e}")
             self.is_generating_tts = False # Release lock on error
 
     def _thread_record_stt(self, duration):
@@ -145,7 +145,7 @@ class Environment:
             self.stt_result_queue.put(user_text)
 
         except Exception as e:
-            print(f"❌ STT Error: {e}")
+            print(f"XXXX STT Error: {e}")
         finally:
             self.is_listening = False
 
@@ -156,4 +156,4 @@ class Environment:
             # Play on Channel 1 (leaving Channel 0 free for game sounds)
             pygame.mixer.Channel(self.agent_channel_id).play(sound)
         except Exception as e:
-            print(f"❌ Playback Error: {e}")
+            print(f"XXXX Playback Error: {e}")
