@@ -190,27 +190,37 @@ def update_agent_audio():
 
 def _attempt_play_sound(sound, label: str):
     """
-    1. If Agent is speaking -> Ignore.
-    2. If Agent is 'thinking' (waiting to speak) -> Ignore.
-    3. Otherwise -> Schedule the sound for a brief moment in the future.
+    1. If Reflex Agent is speaking -> Ignore.
+    2. If LLM Agent is speaking -> Ignore. (NEW)
+    3. If Agent is 'thinking' (waiting to speak) -> Ignore.
+    4. Otherwise -> Schedule the sound.
     """
     global _agent_channel, _pending_sound, _scheduled_play_time
 
     if sound is None or _agent_channel is None:
         return
 
-    # Check 1: Is the agent currently outputting audio?
+    # Check 1: Is the Reflex Channel (0) busy?
     if _agent_channel.get_busy():
         return
 
-    # Check 2: Is the agent currently "thinking" about a previous event?
+    # --- FIX START: Check LLM Channel (1) ---
+    # We need to ensure the LLM isn't currently talking.
+    # Note: We assume Channel 1 is initialized since pygame.mixer.init() is global.
+    try:
+        if pygame.mixer.Channel(1).get_busy():
+            print(f"[AgentSounds] LLM is speaking. Suppressing reflex '{label}'.")
+            return
+    except:
+        pass # Channel 1 might not be initialized yet, ignore
+    # --- FIX END ---
+
+    # Check 2: Is the agent currently "thinking" about a previous reflex?
     if _pending_sound is not None:
         return
 
     # If free, schedule the sound
     _pending_sound = sound
-
-    # This makes the agent feel like it's processing what happened
     delay = random.uniform(0.2, 0.5)
     _scheduled_play_time = time.time() + delay
 
