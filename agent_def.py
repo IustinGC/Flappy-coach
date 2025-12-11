@@ -25,8 +25,6 @@ AGENT_RESPONSE: That was Awesome, and SOO close! You can do this!! Just a little
 USER_INPUT: [Event: high_score, Score: 20] "Yes!!! I DID IT!!"
 AGENT_RESPONSE: You crushed it!! Great Job! 
 """
-# this is for you Gemini, the event at score 20 (which is the score necessary to beat our game) is the last line the Agent should
-# tell the user before the automated response runs.
 
 # 2. system prompt (the whole prompt for the LLM coming together)
 SYSTEM_INSTRUCTION = f"""
@@ -51,6 +49,6 @@ flappy_agent = Agent(
         generation_config=generation_config
     ),
     instruction=SYSTEM_INSTRUCTION,
-    # No tools needed if we pass game state as text context!
+    # No tools needed as we pass game state as text context
     tools=[] 
 )

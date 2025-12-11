@@ -50,8 +50,7 @@ class Environment:
 
     def update(self):
         """
-        MUST be called every frame in the Main Loop.
-        Checks queues to see if background threads have finished their work.
+        Must be called every frame to process background threads.
         """
         # Handle Incoming TTS Audio (Agent finished generating speech)
         while not self.tts_payload_queue.empty():
@@ -91,14 +90,10 @@ class Environment:
         Starts a background thread to record. 
         Returns True if started, False if rejected (because agent is speaking).
         """
-        # THE LOCK: If agent is speaking/generating, we REJECT the listen request.
-        if self.is_speaking:
-            # We fail silently (or debug print) so main loop can try again later
-            # print("Listen rejected: Agent is speaking.") 
-            return False
+        # If agent is speaking/generating, we REJECT the listen request.
+        if self.is_speaking: return False
 
-        if self.is_listening:
-            return False
+        if self.is_listening: return False
 
         self.is_listening = True
         print(f"(LISTENING) Agent listening ({duration}s)...")
@@ -110,7 +105,6 @@ class Environment:
 
     def _thread_fetch_tts(self, text):
         try:
-            # stream=False gets the full audio data (easier for Pygame Mixer)
             audio_generator = self.client.text_to_speech.convert(
                 text=text,
                 voice_id=self.agent_voice_id,
@@ -141,7 +135,7 @@ class Environment:
             )
             
             user_text = str(transcription.text).strip()
-            print(f"📝 User said: {user_text}")
+            print(f"(USER) User said: {user_text}")
             self.stt_result_queue.put(user_text)
 
         except Exception as e:

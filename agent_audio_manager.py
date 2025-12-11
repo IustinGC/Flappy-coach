@@ -210,19 +210,13 @@ def _attempt_play_sound(sound, label: str):
         return
 
     # Check 1: Is the reflex channel already busy?
-    if _agent_channel.get_busy():
-        return
+    if _agent_channel.get_busy(): return
 
-    # --- Check External LLM State ---
     # If the LLM is Thinking, Generating, or Speaking, we suppress the reflex.
-    if _llm_is_busy:
-        # Optional: Print debug so you know why it was silent
-        # print(f"[AgentSounds] Suppressing '{label}' because LLM is busy.")
-        return
+    if _llm_is_busy: return
 
     # Check 2: Is the agent currently "thinking" about a previous reflex?
-    if _pending_sound is not None:
-        return
+    if _pending_sound is not None: return
 
     # If free, schedule the sound
     _pending_sound = sound
@@ -241,25 +235,14 @@ def _play_random(sounds, label: str):
 
 # ---------- Public helpers ----------
 
-def play_intro():
-    _attempt_play_sound(_intro_sound, "intro")
+def play_intro(): _attempt_play_sound(_intro_sound, "intro")
 
+def play_outro(): _attempt_play_sound(_outro_sound, "outro")
 
-def play_outro():
-    _attempt_play_sound(_outro_sound, "outro")
+def play_pipe_loss(): _play_random(_pipe_loss_sounds, "pipe_loss")
 
+def play_ground_loss(): _play_random(_ground_loss_sounds, "ground_loss")
 
-def play_pipe_loss():
-    _play_random(_pipe_loss_sounds, "pipe_loss")
+def play_high_score(): _play_random(_score_sounds, "high_score")
 
-
-def play_ground_loss():
-    _play_random(_ground_loss_sounds, "ground_loss")
-
-
-def play_high_score():
-    _play_random(_score_sounds, "high_score")
-
-
-def play_game_win():
-    _play_random(_win_sounds, "game_win")
+def play_game_win(): _play_random(_win_sounds, "game_win")

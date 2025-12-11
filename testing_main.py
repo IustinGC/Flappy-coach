@@ -10,17 +10,23 @@ from speech_tools import Environment
 from agent_def import flappy_agent
 import agent_audio_manager 
 
-# --- Worker Thread (1 recurring channel for the agent, not creating new threads every time) ---
 def agent_worker(runner, session_id, input_queue, output_queue):
+    """
+    Background thread that maintains the asyncio loop for the Agent.
+    Prevents 'Event Loop Closed' errors and keeps the game running smoothly.
+    """
     async def processing_loop():
         print(" [System] Agent Brain Online (Background Thread)")
         while True:
             loop = asyncio.get_running_loop()
             try:
+                # Wait for input from the main thread
                 msg_context = await loop.run_in_executor(None, input_queue.get)
             except Exception:
                 break
-            if msg_context is None: break
+            
+            if msg_context is None: 
+                break
 
             try:
                 agent_input = types.Content(role="user", parts=[types.Part(text=msg_context)])
@@ -32,6 +38,7 @@ def agent_worker(runner, session_id, input_queue, output_queue):
                             break 
             except Exception as e:
                 print(f"[Worker] Agent Brain Error: {e}")
+    
     asyncio.run(processing_loop())
 
 def main():
@@ -45,6 +52,7 @@ def main():
     print("Initializing Agent Session...")
     session = asyncio.run(runner.session_service.create_session(app_name="flappy_bird_agent", user_id="player_1"))
     
+    # Start the background worker (for the Agent)
     t = threading.Thread(target=agent_worker, args=(runner, session.id, agent_input_queue, agent_output_queue), daemon=True)
     t.start()
 
@@ -58,7 +66,7 @@ def main():
         # --- Update Environment ---
         env.update()
         
-        # BRIDGE: Tell Reflex System if LLM is busy, so it doesn't talk over or interupt
+        # BRIDGE: if LLM is busy, tell the Audio Manager to hold reflexes.
         is_thinking = not agent_input_queue.empty() or not agent_output_queue.empty()
         agent_audio_manager.set_llm_busy_state(env.is_speaking or is_thinking)
 
@@ -70,7 +78,7 @@ def main():
             user_text = None
 
         if user_text:
-            print(f"\n[USER] 🗣️ Said: {user_text}")
+            print(f"\n[USER] Said: {user_text}")
             clean_text = user_text.strip().lower()
 
             # --- FILTER 1: Ghost Inputs ---
@@ -87,8 +95,8 @@ def main():
                 # 2. Disable Agent (Stop listening)
                 game.agent_enabled = False 
                 # 3. Start The Safe Shutdown Timer
-                # We give it 7 seconds for the audio to play out smoothly.
-                shutdown_timer = time.time() + 7.0
+                # We give it 12 seconds for the audio to play out smoothly.
+                shutdown_timer = time.time() + 12.0
                 
                 user_text = None 
             
