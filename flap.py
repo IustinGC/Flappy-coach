@@ -350,7 +350,7 @@ class FlappyGame:
             self.screen.blit(self.info_1, (50, 220))
 
             # Enable Agent if conditions met
-            if not self.agent_enabled and self.loss_count >= 5 and self.ticks_played >= 600:
+            if not self.agent_enabled and self.loss_count >= 2 and self.ticks_played >= 100:
                 self.agent_enabled = True
                 print("This is where the agent should first intervene")
                 play_intro()
