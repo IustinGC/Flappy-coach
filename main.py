@@ -65,10 +65,13 @@ def main():
     while running:
         # --- Update Environment ---
         env.update()
-        
+
         # BRIDGE: if LLM is busy, tell the Audio Manager to hold reflexes.
         is_thinking = not agent_input_queue.empty() or not agent_output_queue.empty()
         agent_audio_manager.set_llm_busy_state(env.is_speaking or is_thinking)
+
+        # variable to make the agent move its mouth
+        game.is_talking = env.is_speaking
 
         # --- Check for User Voice Input ---
         # If we are shutting down, stop listening to the user.
@@ -85,7 +88,7 @@ def main():
             if clean_text.startswith("(") or len(clean_text) < 2:
                 print(f"[SYSTEM] Ignoring ghost input: {clean_text}")
                 user_text = None 
-            
+
             # --- FILTER 2: Stop Command ---
             stop_phrases = ["i want to stop", "stop now", "end the game", "i'm done"]
             if any(phrase in clean_text for phrase in stop_phrases):
@@ -131,7 +134,7 @@ def main():
         # --- Step the Game ---
         if running:
             running = game.frame_step()
-            
+
         # --- Handle Safe Shutdown ---
         if shutdown_timer is not None:
             # If the timer has expired, NOW we close the window.

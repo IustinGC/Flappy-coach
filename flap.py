@@ -139,6 +139,9 @@ class FlappyGame:
         self.SCORE_PANEL = pygame.image.load('assets/sprites/score.png').convert_alpha()
         self.AGENT_WINDOW = pygame.image.load('assets/sprites/agent.png').convert_alpha()
 
+        # load the agent with the mouth open
+        self.AGENT_SPEAK = pygame.image.load('assets/sprites/agent_speaking.png').convert_alpha()
+
         self.clock = pygame.time.Clock()
 
         # Persistent Game Variables
@@ -320,8 +323,17 @@ class FlappyGame:
         self.pipe_group.draw(self.screen)
         self.ground_group.draw(self.screen)
 
+        # make the agent switch between mouth open and closed when speaking
         if self.agent_enabled:
-            self.screen.blit(self.AGENT_WINDOW, (10, 510))
+            # 1. Check if talking (default to False if variable missing)
+            talking = getattr(self, 'is_talking', False)
+
+            # 2. Toggle frame every ~150ms (Animation Speed)
+            # If talking AND (time modulo) is even -> Open Mouth. Else -> Closed.
+            if talking and (pygame.time.get_ticks() // 150) % 2 == 0:
+                self.screen.blit(self.AGENT_SPEAK, (10, 510))
+            else:
+                self.screen.blit(self.AGENT_WINDOW, (10, 510))
 
         # --- GAME OVER UI ---
         if not self.alive:
