@@ -8,13 +8,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUND_DIR = os.path.join(BASE_DIR, "assets", "audio")
 
 
-# Helper to keep the dictionary clean
 def get_path(filename):
     return os.path.join(SOUND_DIR, filename)
 
 
-# --- The Dictionary Structure ---
-# Mapped to the specific texts provided in support_responses.py
 AGENT_AUDIO_PATHS = {
     "LOSS": {
         "PIPE": {
@@ -102,25 +99,20 @@ _win_sounds = []
 _initialized = False
 _agent_channel = None
 
-# --- Scheduling State (for non-blocking delays) ---
-_pending_sound = None  # The sound waiting to be played
-_scheduled_play_time = 0.0  # The exact timestamp when it should start
+# --- Scheduling State ---
+_pending_sound = None
+_scheduled_play_time = 0.0
 
-# allows main.py to tell us if the LLM is busy (thinking OR generating)
-_llm_is_busy = False 
+_llm_is_busy = False
+
 
 def set_llm_busy_state(is_busy: bool):
-    """
-    Called by Main Loop.
-    If True, prevents any new reflex sounds from being scheduled.
-    """
     global _llm_is_busy
     _llm_is_busy = is_busy
 
+
 def _load_sound(abs_path: str):
-    """Loads a single sound file from an absolute path."""
     if not os.path.exists(abs_path):
-        # print(f"[AgentSounds] MISSING file: {abs_path}")
         return None
     try:
         snd = pygame.mixer.Sound(abs_path)
@@ -131,9 +123,7 @@ def _load_sound(abs_path: str):
 
 
 def _load_from_dict(path_dict):
-    """Iterates over a dictionary of paths and returns a list of loaded sounds."""
     loaded_sounds = []
-    # Sorting keys ensures p_loss_01 is loaded before p_loss_02, etc.
     for key in sorted(path_dict.keys()):
         path = path_dict[key]
         snd = _load_sound(path)
@@ -147,28 +137,20 @@ def init_agent_sounds():
     global _intro_sound, _outro_sound
     global _pipe_loss_sounds, _ground_loss_sounds, _score_sounds, _win_sounds
 
-    if _initialized:
-        return
+    if _initialized: return
 
     if pygame.mixer.get_init() is None:
         pygame.mixer.init()
 
-    # Reserve Channel 0 explicitly for the agent
     pygame.mixer.set_reserved(1)
     _agent_channel = pygame.mixer.Channel(0)
 
-    # --- Load Sounds from Dictionary ---
     print("[AgentSounds] Loading audio assets...")
 
-    # Misc
     _intro_sound = _load_sound(AGENT_AUDIO_PATHS["MISC"]["intro"])
     _outro_sound = _load_sound(AGENT_AUDIO_PATHS["MISC"]["outro"])
-
-    # Losses
     _pipe_loss_sounds = _load_from_dict(AGENT_AUDIO_PATHS["LOSS"]["PIPE"])
     _ground_loss_sounds = _load_from_dict(AGENT_AUDIO_PATHS["LOSS"]["GROUND"])
-
-    # Achievements
     _score_sounds = _load_from_dict(AGENT_AUDIO_PATHS["ACHIEVEMENT"]["HIGH_SCORE"])
     _win_sounds = _load_from_dict(AGENT_AUDIO_PATHS["ACHIEVEMENT"]["WIN"])
 
@@ -178,47 +160,27 @@ def init_agent_sounds():
 
 
 def update_agent_audio():
-    """
-    Called every frame by the game loop.
-    Checks if a scheduled sound is ready to be played.
-    """
     global _agent_channel, _pending_sound, _scheduled_play_time
 
     if _pending_sound is None:
         return
 
-    # If enough time has passed since we scheduled the sound
     if time.time() >= _scheduled_play_time:
-        # Verify one last time that the channel is actually free
         if not _agent_channel.get_busy():
             print("[AgentSounds] Delay over -> Playing now.")
             _agent_channel.play(_pending_sound)
 
-        # Clear the schedule (it's either played or discarded if busy)
         _pending_sound = None
 
 
 def _attempt_play_sound(sound, label: str):
-    """
-    1. If Agent is speaking -> Ignore.
-    2. If Agent is 'thinking' (waiting to speak) -> Ignore.
-    3. Otherwise -> Schedule the sound.
-    """
     global _agent_channel, _pending_sound, _scheduled_play_time, _llm_is_busy
 
-    if sound is None or _agent_channel is None:
-        return
-
-    # Check 1: Is the reflex channel already busy?
+    if sound is None or _agent_channel is None: return
     if _agent_channel.get_busy(): return
-
-    # If the LLM is Thinking, Generating, or Speaking, we suppress the reflex.
     if _llm_is_busy: return
-
-    # Check 2: Is the agent currently "thinking" about a previous reflex?
     if _pending_sound is not None: return
 
-    # If free, schedule the sound
     _pending_sound = sound
     delay = random.uniform(0.2, 0.5)
     _scheduled_play_time = time.time() + delay
@@ -227,22 +189,43 @@ def _attempt_play_sound(sound, label: str):
 
 
 def _play_random(sounds, label: str):
-    if not sounds:
-        return
+    if not sounds: return
     snd = random.choice(sounds)
     _attempt_play_sound(snd, label)
 
 
-# ---------- Public helpers ----------
+# --- NEW FUNCTION FOR MAIN.PY TO CHECK STATUS ---
+def is_reflex_active():
+    """
+    Returns True if a reflex sound is currently playing OR 
+    is scheduled to play in the near future.
+    """
+    global _agent_channel, _pending_sound
+
+    # Check 1: Is a sound physically playing?
+    if _agent_channel and _agent_channel.get_busy():
+        return True
+
+    # Check 2: Is a sound waiting in the chamber?
+    if _pending_sound is not None:
+        return True
+
+    return False
+
 
 def play_intro(): _attempt_play_sound(_intro_sound, "intro")
 
+
 def play_outro(): _attempt_play_sound(_outro_sound, "outro")
+
 
 def play_pipe_loss(): _play_random(_pipe_loss_sounds, "pipe_loss")
 
+
 def play_ground_loss(): _play_random(_ground_loss_sounds, "ground_loss")
 
+
 def play_high_score(): _play_random(_score_sounds, "high_score")
+
 
 def play_game_win(): _play_random(_win_sounds, "game_win")

@@ -9,99 +9,95 @@ import pygame
 from elevenlabs.client import ElevenLabs
 import config
 
+
 class Environment:
     def __init__(self):
         self.client = ElevenLabs(api_key=config.EL_API_KEY)
-        self.agent_voice_id = config.VOICE_ID # Olga, cus we cool
+        self.agent_voice_id = config.VOICE_ID
         self.model_id_speak = config.MODEL_ID_SPEAK
-        self.model_id_listen= config.MODEL_ID_LISTEN
-        
-        # --- Asynchronous Communication Queues ---
-        self.tts_payload_queue = queue.Queue() # Holds audio bytes ready to play
-        self.stt_result_queue = queue.Queue()  # Holds transcribed text from user
-        
-        # --- State Flags ---
+        self.model_id_listen = config.MODEL_ID_LISTEN
+
+        self.tts_payload_queue = queue.Queue()
+        self.stt_result_queue = queue.Queue()
+
         self.is_listening = False
-        self.is_generating_tts = False # True when downloading audio (before playing)
-        
-        # --- Audio Channels ---
-        # Channel 0 is reserved for 'Reflexes' (flap.py / agent_audio_manager)
-        # Channel 1 is reserved for 'LLM Agent' (this file)
+        self.is_generating_tts = False
+
         self.reflex_channel_id = 0
-        self.agent_channel_id = 1 
+        self.agent_channel_id = 1
+
+        self.last_speech_finish_time = 0.0
+        self.SPEECH_COOLDOWN_SECONDS = 1.0
+
+        # Flag to indicate if we forcibly stopped recording to speak
+        self.listening_interrupted = False
 
     @property
     def is_speaking(self):
-        """
-        Returns True if the Agent is EITHER generating text OR playing audio.
-        Crucially, checks BOTH the LLM channel and the Hard-coded Reflex channel.
-        """
-        # 1. Is Python currently downloading audio?
         if self.is_generating_tts:
             return True
-            
-        # 2. Is Pygame playing audio?
         if pygame.mixer.get_init():
             llm_busy = pygame.mixer.Channel(self.agent_channel_id).get_busy()
             reflex_busy = pygame.mixer.Channel(self.reflex_channel_id).get_busy()
             return llm_busy or reflex_busy
-            
         return False
 
     def update(self):
-        """
-        Must be called every frame to process background threads.
-        """
-        # Handle Incoming TTS Audio (Agent finished generating speech)
+        if self.is_speaking:
+            self.last_speech_finish_time = time.time()
+
         while not self.tts_payload_queue.empty():
             try:
                 audio_bytes = self.tts_payload_queue.get_nowait()
-                # Generation is done, now we play (which sets get_busy() to True)
-                self.is_generating_tts = False 
                 self._play_audio_bytes(audio_bytes)
+                self.is_generating_tts = False
             except queue.Empty:
                 pass
 
     def get_latest_input(self):
-        """
-        Non-blocking check for user input.
-        Returns text string if STT just finished, otherwise None.
-        """
         if not self.stt_result_queue.empty():
             return self.stt_result_queue.get()
         return None
 
-    # --- Public Methods ---
-
     def speak_to_user(self, text):
-        """
-        Starts a background thread to fetch audio. Non-blocking.
-        """
         if not text: return
-        
-        # Set Lock IMMEDIATELY so we don't try to listen while downloading
+
+        # --- FIX: PRIORITY INTERRUPT ---
+        # If we are about to speak, we MUST stop listening immediately.
+        # Otherwise, we will record our own voice.
+        if self.is_listening:
+            self.stop_listening()
+
         self.is_generating_tts = True
         print(f"(SPEAKING) Agent queuing speech: {text}")
-        
         threading.Thread(target=self._thread_fetch_tts, args=(text,), daemon=True).start()
 
-    def listen_to_user(self, duration=4):
+    def stop_listening(self):
         """
-        Starts a background thread to record. 
-        Returns True if started, False if rejected (because agent is speaking).
+        Forces the recording thread to stop and discard input.
         """
-        # If agent is speaking/generating, we REJECT the listen request.
-        if self.is_speaking: return False
+        if self.is_listening:
+            print("[System] Priority Interrupt: Stopping microphone to speak.")
+            self.listening_interrupted = True
+            try:
+                sd.stop()  # Stops the stream in the background thread
+            except Exception as e:
+                print(f"Error stopping stream: {e}")
 
+    def listen_to_user(self, duration=4):
+        if self.is_speaking: return False
         if self.is_listening: return False
 
+        time_since_speech = time.time() - self.last_speech_finish_time
+        if time_since_speech < self.SPEECH_COOLDOWN_SECONDS:
+            return False
+
         self.is_listening = True
+        self.listening_interrupted = False  # Reset flag
+
         print(f"(LISTENING) Agent listening ({duration}s)...")
-        
         threading.Thread(target=self._thread_record_stt, args=(duration,), daemon=True).start()
         return True
-
-    # --- Internal Background Threads ---
 
     def _thread_fetch_tts(self, text):
         try:
@@ -114,14 +110,21 @@ class Environment:
             self.tts_payload_queue.put(audio_data)
         except Exception as e:
             print(f"XXXX TTS Error: {e}")
-            self.is_generating_tts = False # Release lock on error
+            self.is_generating_tts = False
 
     def _thread_record_stt(self, duration):
         try:
             sample_rate = 44100
-            # blocking=True is fine HERE because we are in a background thread
-            audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16', blocking=True)
-            
+            # blocking=True will be interrupted by sd.stop() in main thread
+            audio_data = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16',
+                                blocking=True)
+
+            # --- FIX: CHECK INTERRUPTION ---
+            # If main thread flagged interruption, we DISCARD this recording.
+            if self.listening_interrupted:
+                print("[System] Discarding recording (Interrupted by Agent Speech)")
+                return
+
             virtual_file = io.BytesIO()
             wav.write(virtual_file, sample_rate, audio_data)
             virtual_file.seek(0)
@@ -133,13 +136,15 @@ class Environment:
                 tag_audio_events=True,
                 language_code='eng'
             )
-            
+
             user_text = str(transcription.text).strip()
             print(f"(USER) User said: {user_text}")
             self.stt_result_queue.put(user_text)
 
         except Exception as e:
-            print(f"XXXX STT Error: {e}")
+            # If sd.stop() caused an error or other issue
+            if not self.listening_interrupted:
+                print(f"XXXX STT Error: {e}")
         finally:
             self.is_listening = False
 
@@ -147,7 +152,6 @@ class Environment:
         try:
             sound_file = io.BytesIO(audio_data)
             sound = pygame.mixer.Sound(sound_file)
-            # Play on Channel 1 (leaving Channel 0 free for game sounds)
             pygame.mixer.Channel(self.agent_channel_id).play(sound)
         except Exception as e:
             print(f"XXXX Playback Error: {e}")
